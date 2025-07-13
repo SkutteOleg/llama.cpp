@@ -1,6 +1,11 @@
 include("ggml/cmake/common.cmake")
 
 function(llama_add_compile_flags)
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        list(APPEND C_FLAGS   -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+        list(APPEND CXX_FLAGS -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+    endif()
+
     if (LLAMA_FATAL_WARNINGS)
         if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             list(APPEND C_FLAGS   -Werror)

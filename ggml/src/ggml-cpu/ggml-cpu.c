@@ -7,6 +7,7 @@
 #include "ggml-cpu-impl.h"
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
+#include "ggml/ggml-impl.h"
 #include "quants.h"
 #include "ggml-threading.h"
 #include "unary-ops.h"
@@ -404,7 +405,9 @@ typedef SRWLOCK            ggml_mutex_t;
 typedef pthread_cond_t     ggml_cond_t;
 typedef pthread_mutex_t    ggml_mutex_t;
 
+#ifndef _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
 #define ggml_mutex_init(m)          pthread_mutex_init(m, NULL)
+#endif
 #define ggml_mutex_destroy(m)       pthread_mutex_destroy(m)
 #define ggml_mutex_lock(m)          pthread_mutex_lock(m)
 #define ggml_mutex_unlock(m)        pthread_mutex_unlock(m)
