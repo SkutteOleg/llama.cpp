@@ -356,7 +356,7 @@ jobs:
           name: llama-bin-win-${{ matrix.build }}.zip
 
   windows-cuda:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     strategy:
       matrix:
