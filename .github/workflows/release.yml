@@ -390,13 +390,15 @@ jobs:
         id: get_libcurl
         uses: ./.github/actions/windows-setup-curl
 
+      - name: Add msbuild to path
+        uses: ilammy/setup-msvc-dev@v1
+
       - name: Build
         id: cmake_build
         shell: cmd
         env:
           CURL_PATH: ${{ steps.get_libcurl.outputs.curl_path }}
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           cmake -S . -B build -G "Ninja Multi-Config" ^
             -DGGML_NATIVE=OFF ^
             -DGGML_BACKEND_DL=OFF ^
