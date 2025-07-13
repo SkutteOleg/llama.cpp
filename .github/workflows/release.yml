@@ -164,9 +164,10 @@ jobs:
           cmake -B build \
             -DCMAKE_INSTALL_RPATH='$ORIGIN' \
             -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-            -DGGML_BACKEND_DL=ON \
+            -DGGML_BACKEND_DL=OFF \
             -DGGML_NATIVE=OFF \
-            -DGGML_CPU_ALL_VARIANTS=ON \
+            -DGGML_CPU_ALL_VARIANTS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DLLAMA_FATAL_WARNINGS=ON \
             ${{ env.CMAKE_ARGS }}
           cmake --build build --config Release -j $(nproc)
@@ -217,9 +218,10 @@ jobs:
           cmake -B build \
             -DCMAKE_INSTALL_RPATH='$ORIGIN' \
             -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-            -DGGML_BACKEND_DL=ON \
+            -DGGML_BACKEND_DL=OFF \
             -DGGML_NATIVE=OFF \
-            -DGGML_CPU_ALL_VARIANTS=ON \
+            -DGGML_CPU_ALL_VARIANTS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DGGML_VULKAN=ON \
             ${{ env.CMAKE_ARGS }}
           cmake --build build --config Release -j $(nproc)
@@ -281,8 +283,9 @@ jobs:
           cmake -S . -B build -G "Ninja Multi-Config" ^
             -D CMAKE_TOOLCHAIN_FILE=cmake/${{ matrix.arch }}-windows-llvm.cmake ^
             -DGGML_NATIVE=OFF ^
-            -DGGML_BACKEND_DL=ON ^
-            -DGGML_CPU_ALL_VARIANTS=${{ matrix.arch == 'x64' && 'ON' || 'OFF' }} ^
+            -DGGML_BACKEND_DL=OFF ^
+            -DGGML_CPU_ALL_VARIANTS=OFF ^
+            -DBUILD_SHARED_LIBS=ON ^
             -DGGML_OPENMP=ON ^
             -DCURL_LIBRARY="%CURL_PATH%/lib/libcurl.dll.a" -DCURL_INCLUDE_DIR="%CURL_PATH%/include" ^
             ${{ env.CMAKE_ARGS }}
@@ -371,7 +374,7 @@ jobs:
       - name: Build
         id: cmake_build
         run: |
-          cmake -S . -B build ${{ matrix.defines }} -DGGML_NATIVE=OFF -DGGML_CPU=OFF -DGGML_BACKEND_DL=ON -DLLAMA_CURL=OFF
+          cmake -S . -B build ${{ matrix.defines }} -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DBUILD_SHARED_LIBS=ON -DLLAMA_CURL=OFF
           cmake --build build --config Release --target ${{ matrix.target }}
 
       - name: Pack artifacts
@@ -420,9 +423,10 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           cmake -S . -B build -G "Ninja Multi-Config" ^
-            -DGGML_BACKEND_DL=ON ^
+            -DGGML_BACKEND_DL=OFF ^
             -DGGML_NATIVE=OFF ^
-            -DGGML_CPU=OFF ^
+            -DGGML_CPU_ALL_VARIANTS=OFF ^
+            -DBUILD_SHARED_LIBS=ON ^
             -DGGML_CUDA=ON ^
             -DLLAMA_CURL=OFF
           set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
@@ -489,8 +493,9 @@ jobs:
           cmake -G "Ninja" -B build ^
             -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=icx ^
             -DCMAKE_BUILD_TYPE=Release ^
-            -DGGML_BACKEND_DL=ON -DBUILD_SHARED_LIBS=ON ^
-            -DGGML_CPU=OFF -DGGML_SYCL=ON ^
+            -DGGML_CPU_ALL_VARIANTS=OFF ^
+            -DGGML_BACKEND_DL=OFF -DBUILD_SHARED_LIBS=ON ^
+            -DGGML_SYCL=ON ^
             -DLLAMA_CURL=OFF
           cmake --build build --target ggml-sycl -j
 
@@ -575,9 +580,10 @@ jobs:
             -DCMAKE_CXX_COMPILER="${env:HIP_PATH}\bin\clang++.exe" `
             -DCMAKE_CXX_FLAGS="-I$($PWD.Path.Replace('\', '/'))/rocwmma/library/include/ -Wno-ignored-attributes -Wno-nested-anon-types" `
             -DCMAKE_BUILD_TYPE=Release `
-            -DGGML_BACKEND_DL=ON `
+            -DGGML_BACKEND_DL=OFF `
             -DGGML_NATIVE=OFF `
-            -DGGML_CPU=OFF `
+            -DGGML_CPU_ALL_VARIANTS=OFF `
+            -DBUILD_SHARED_LIBS=ON `
             -DAMDGPU_TARGETS="${{ matrix.gpu_targets }}" `
             -DGGML_HIP_ROCWMMA_FATTN=ON `
             -DGGML_HIP=ON `
@@ -692,26 +698,6 @@ jobs:
         id: move_artifacts
         run: |
           mkdir -p release
-
-          echo "Adding CPU backend files to existing zips..."
-          for arch in x64 arm64; do
-            cpu_zip="artifact/llama-bin-win-cpu-${arch}.zip"
-            temp_dir=$(mktemp -d)
-            echo "Extracting CPU backend for $arch..."
-            unzip "$cpu_zip" -d "$temp_dir"
-
-            echo "Adding CPU files to $arch zips..."
-            for target_zip in artifact/llama-bin-win-*-${arch}.zip; do
-              if [[ "$target_zip" == "$cpu_zip" ]]; then
-                continue
-              fi
-              echo "Adding CPU backend to $(basename "$target_zip")"
-              realpath_target_zip=$(realpath "$target_zip")
-              (cd "$temp_dir" && zip -r "$realpath_target_zip" .)
-            done
-
-            rm -rf "$temp_dir"
-          done
 
           echo "Renaming and moving zips to release..."
           for zip_file in artifact/llama-bin-win-*.zip; do
