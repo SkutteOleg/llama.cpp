@@ -241,7 +241,7 @@ jobs:
           name: llama-bin-ubuntu-vulkan-x64.zip
 
   windows-cpu:
-    runs-on: windows-2025
+    runs-on: windows-2022
 
     strategy:
       matrix:
@@ -304,7 +304,7 @@ jobs:
           name: llama-bin-win-cpu-${{ matrix.arch }}.zip
 
   windows:
-    runs-on: windows-2025
+    runs-on: windows-2022
 
     env:
       OPENBLAS_VERSION: 0.3.23
@@ -454,7 +454,7 @@ jobs:
           name: cudart-llama-bin-win-cuda-${{ matrix.cuda }}-x64.zip
 
   windows-sycl:
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     defaults:
       run:
