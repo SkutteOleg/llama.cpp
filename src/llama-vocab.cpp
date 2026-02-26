@@ -4077,7 +4077,19 @@ int32_t llama_tokenize(
                      int32_t   n_tokens_max,
                         bool   add_special,
                         bool   parse_special) {
-    return vocab->tokenize(text, text_len, tokens, n_tokens_max, add_special, parse_special);
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        return vocab->tokenize(text, text_len, tokens, n_tokens_max, add_special, parse_special);
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return 0;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return 0;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
+        return 0;
+    }
 }
 
 int32_t llama_token_to_piece(
@@ -4098,5 +4110,17 @@ int32_t llama_detokenize(
                      int32_t   text_len_max,
                         bool   remove_special,
                         bool   unparse_special) {
-    return vocab->detokenize(tokens, n_tokens, text, text_len_max, remove_special, unparse_special);
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        return vocab->detokenize(tokens, n_tokens, text, text_len_max, remove_special, unparse_special);
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return 0;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return 0;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
+        return 0;
+    }
 }
