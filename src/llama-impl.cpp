@@ -133,6 +133,10 @@ static std::string gguf_data_to_str(enum gguf_type type, const void * data, int 
     }
 }
 
+GGML_NORETURN void llama_ggml_abort_callback(const char * message) {
+    throw LlamaException(message);
+}
+
 std::string gguf_kv_to_str(const struct gguf_context * ctx_gguf, int i) {
     const enum gguf_type type = gguf_get_kv_type(ctx_gguf, i);
 

@@ -346,62 +346,74 @@ static struct llama_model * llama_model_load_from_file_impl(
         std::vector<std::string> & splits,
         FILE * file,
         struct llama_model_params params) {
-    {
-        int n_sources_defined = 0;
-        if (metadata != nullptr) {
-            n_sources_defined++;
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        {
+            int n_sources_defined = 0;
+            if (metadata != nullptr) {
+                n_sources_defined++;
+            }
+            if (!path_model.empty()) {
+                n_sources_defined++;
+            }
+            if (file != nullptr) {
+                n_sources_defined++;
+            }
+            if (n_sources_defined != 1) {
+                LLAMA_LOG_ERROR("%s: exactly one out metadata, path_model, and file must be defined\n", __func__);
+                return nullptr;
+            }
         }
-        if (!path_model.empty()) {
-            n_sources_defined++;
-        }
-        if (file != nullptr) {
-            n_sources_defined++;
-        }
-        if (n_sources_defined != 1) {
-            LLAMA_LOG_ERROR("%s: exactly one out metadata, path_model, and file must be defined\n", __func__);
+        ggml_time_init();
+
+        if (!params.vocab_only && ggml_backend_reg_count() == 0) {
+            LLAMA_LOG_ERROR("%s: no backends are loaded. hint: use ggml_backend_load() or ggml_backend_load_all() to load a backend before calling this function\n", __func__);
             return nullptr;
         }
-    }
-    ggml_time_init();
 
-    if (!params.vocab_only && ggml_backend_reg_count() == 0) {
-        LLAMA_LOG_ERROR("%s: no backends are loaded. hint: use ggml_backend_load() or ggml_backend_load_all() to load a backend before calling this function\n", __func__);
-        return nullptr;
-    }
-
-    unsigned cur_percentage = 0;
-    if (params.progress_callback == NULL) {
-        params.progress_callback_user_data = &cur_percentage;
-        params.progress_callback = [](float progress, void * ctx) {
-            unsigned * cur_percentage_p = (unsigned *) ctx;
-            unsigned percentage = (unsigned) (100 * progress);
-            while (percentage > *cur_percentage_p) {
-                *cur_percentage_p = percentage;
-                LLAMA_LOG_CONT(".");
-                if (percentage >= 100) {
-                    LLAMA_LOG_CONT("\n");
+        unsigned cur_percentage = 0;
+        if (params.progress_callback == NULL) {
+            params.progress_callback_user_data = &cur_percentage;
+            params.progress_callback = [](float progress, void * ctx) {
+                unsigned * cur_percentage_p = (unsigned *) ctx;
+                unsigned percentage = (unsigned) (100 * progress);
+                while (percentage > *cur_percentage_p) {
+                    *cur_percentage_p = percentage;
+                    LLAMA_LOG_CONT(".");
+                    if (percentage >= 100) {
+                        LLAMA_LOG_CONT("\n");
+                    }
                 }
+                return true;
+            };
+        }
+
+        const auto [status, model] = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, params);
+        GGML_ASSERT(status <= 0);
+        if (status < 0) {
+            if (status == -1) {
+                LLAMA_LOG_ERROR("%s: failed to load model\n", __func__);
+            } else if (status == -2) {
+                LLAMA_LOG_INFO("%s: cancelled model load\n", __func__);
             }
-            return true;
-        };
-    }
 
-    const auto [status, model] = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, params);
-    GGML_ASSERT(status <= 0);
-    if (status < 0) {
-        if (status == -1) {
-            LLAMA_LOG_ERROR("%s: failed to load model\n", __func__);
-        } else if (status == -2) {
-            LLAMA_LOG_INFO("%s: cancelled model load\n", __func__);
+            if (model) {
+                llama_model_free(model);
+            }
+            return nullptr;
         }
 
-        if (model) {
-            llama_model_free(model);
-        }
+        return model;
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return nullptr;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return nullptr;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
         return nullptr;
     }
-
-    return model;
 }
 
 struct llama_model * llama_model_init_from_user(

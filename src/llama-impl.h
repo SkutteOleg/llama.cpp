@@ -5,6 +5,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <stdexcept>
 
 #ifdef __GNUC__
 #    if defined(__MINGW32__) && !defined(__clang__)
@@ -87,3 +88,25 @@ std::string gguf_kv_to_str(const struct gguf_context * ctx_gguf, int i);
 #define LLAMA_TENSOR_NAME_FATTN   "__fattn__"
 #define LLAMA_TENSOR_NAME_FGDN_AR "__fgdn_ar__"
 #define LLAMA_TENSOR_NAME_FGDN_CH "__fgdn_ch__"
+
+//
+// error handling
+//
+
+struct LlamaException : public std::runtime_error {
+    LlamaException(const std::string& message) : std::runtime_error(message) {}
+};
+
+GGML_NORETURN void llama_ggml_abort_callback(const char * message);
+
+class ScopedGGMLAbortCallback {
+public:
+    ScopedGGMLAbortCallback() {
+        previous_callback = ggml_set_abort_callback(llama_ggml_abort_callback);
+    }
+    ~ScopedGGMLAbortCallback() {
+        ggml_set_abort_callback(previous_callback);
+    }
+private:
+    ggml_abort_callback_t previous_callback;
+};
