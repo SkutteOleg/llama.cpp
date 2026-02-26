@@ -2996,10 +2996,15 @@ llama_context * llama_init_from_model(
     }
 
     try {
+        ScopedGGMLAbortCallback abort_callback;
         auto * ctx = new llama_context(*model, params);
         return ctx;
+    } catch (const LlamaException & err) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", err.what());
     } catch (const std::exception & err) {
         LLAMA_LOG_ERROR("%s: failed to initialize the context: %s\n", __func__, err.what());
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
     }
 
     return nullptr;
@@ -3440,23 +3445,47 @@ size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, lla
 int32_t llama_encode(
         llama_context * ctx,
           llama_batch   batch) {
-    const int ret = ctx->encode(batch);
-    if (ret != 0) {
-        LLAMA_LOG_ERROR("%s: failed to encode, ret = %d\n", __func__, ret);
-    }
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        const int ret = ctx->encode(batch);
+        if (ret != 0) {
+            LLAMA_LOG_ERROR("%s: failed to encode, ret = %d\n", __func__, ret);
+        }
 
-    return ret;
+        return ret;
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return -3;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return -3;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
+        return -3;
+    }
 }
 
 int32_t llama_decode(
         llama_context * ctx,
           llama_batch   batch) {
-    const int ret = ctx->decode(batch);
-    if (ret != 0 && ret != 1) {
-        LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
-    }
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        const int ret = ctx->decode(batch);
+        if (ret != 0 && ret != 1) {
+            LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
+        }
 
-    return ret;
+        return ret;
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return -3;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return -3;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
+        return -3;
+    }
 }
 
 //
