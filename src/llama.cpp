@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -895,51 +896,53 @@ static struct llama_model * llama_model_load_from_file_impl(
         std::vector<std::string> & splits,
         FILE * file,
         struct llama_model_params params) {
-    {
-        int n_sources_defined = 0;
-        if (metadata != nullptr) {
-            n_sources_defined++;
+    try {
+        ScopedGGMLAbortCallback abort_callback;
+        {
+            int n_sources_defined = 0;
+            if (metadata != nullptr) {
+                n_sources_defined++;
+            }
+            if (!path_model.empty()) {
+                n_sources_defined++;
+            }
+            if (file != nullptr) {
+                n_sources_defined++;
+            }
+            if (n_sources_defined != 1) {
+                LLAMA_LOG_ERROR("%s: exactly one out metadata, path_model, and file must be defined\n", __func__);
+                return nullptr;
+            }
         }
-        if (!path_model.empty()) {
-            n_sources_defined++;
-        }
-        if (file != nullptr) {
-            n_sources_defined++;
-        }
-        if (n_sources_defined != 1) {
-            LLAMA_LOG_ERROR("%s: exactly one out metadata, path_model, and file must be defined\n", __func__);
+        ggml_time_init();
+
+        if (!params.vocab_only && ggml_backend_reg_count() == 0) {
+            LLAMA_LOG_ERROR("%s: no backends are loaded. hint: use ggml_backend_load() or ggml_backend_load_all() to load a backend before calling this function\n", __func__);
             return nullptr;
         }
-    }
-    ggml_time_init();
 
-    if (!params.vocab_only && ggml_backend_reg_count() == 0) {
-        LLAMA_LOG_ERROR("%s: no backends are loaded. hint: use ggml_backend_load() or ggml_backend_load_all() to load a backend before calling this function\n", __func__);
-        return nullptr;
-    }
-
-    unsigned cur_percentage = 0;
-    if (params.progress_callback == NULL) {
-        params.progress_callback_user_data = &cur_percentage;
-        params.progress_callback = [](float progress, void * ctx) {
-            unsigned * cur_percentage_p = (unsigned *) ctx;
-            unsigned percentage = (unsigned) (100 * progress);
-            while (percentage > *cur_percentage_p) {
-                *cur_percentage_p = percentage;
-                LLAMA_LOG_CONT(".");
-                if (percentage >= 100) {
-                    LLAMA_LOG_CONT("\n");
+        unsigned cur_percentage = 0;
+        if (params.progress_callback == NULL) {
+            params.progress_callback_user_data = &cur_percentage;
+            params.progress_callback = [](float progress, void * ctx) {
+                unsigned * cur_percentage_p = (unsigned *) ctx;
+                unsigned percentage = (unsigned) (100 * progress);
+                while (percentage > *cur_percentage_p) {
+                    *cur_percentage_p = percentage;
+                    LLAMA_LOG_CONT(".");
+                    if (percentage >= 100) {
+                        LLAMA_LOG_CONT("\n");
+                    }
                 }
-            }
-            return true;
-        };
-    }
+                return true;
+            };
+        }
 
-    llama_model * model = new llama_model(params);
+        std::unique_ptr<llama_model> model(new llama_model(params));
 
-    // create list of devices to use with this model
-    if (params.devices) {
-        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+        // create list of devices to use with this model
+        if (params.devices) {
+            if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
             size_t n_devs = 0;
             while (params.devices[n_devs]) {
                 n_devs++;
@@ -953,7 +956,7 @@ static struct llama_model * llama_model_load_from_file_impl(
                 LLAMA_LOG_INFO("%s: - device %zu: %s\n", __func__, i, ggml_backend_dev_name(params.devices[i]));
             }
             model->get_split_state_ud.n_devices = n_devs;
-            model->get_split_state_ud.model = model;
+            model->get_split_state_ud.model = model.get();
             model->devices.push_back({
                 true, ggml_backend_meta_device(
                 params.devices, n_devs, llama_meta_device_get_split_state, &model->get_split_state_ud)
@@ -962,16 +965,16 @@ static struct llama_model * llama_model_load_from_file_impl(
             for (ggml_backend_dev_t * dev = params.devices; *dev; ++dev) {
                 model->devices.push_back({false, *dev});
             }
-        }
-    } else {
-        // default device selection
+            }
+        } else {
+            // default device selection
 
-        // build list of available devices
-        std::vector<llama_device> gpus;
-        std::vector<llama_device> igpus;
-        std::vector<llama_device> rpc_servers;
+            // build list of available devices
+            std::vector<llama_device> gpus;
+            std::vector<llama_device> igpus;
+            std::vector<llama_device> rpc_servers;
 
-        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+            if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
             std::vector<ggml_backend_dev_t> devs;
             devs.reserve(ggml_backend_dev_count());
             for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
@@ -994,7 +997,7 @@ static struct llama_model * llama_model_load_from_file_impl(
 
             GGML_ASSERT(!devs.empty());
             model->get_split_state_ud.n_devices = devs.size();
-            model->get_split_state_ud.model     = model;
+            model->get_split_state_ud.model     = model.get();
             gpus.push_back({
                 true, ggml_backend_meta_device(
                 devs.data(), devs.size(), llama_meta_device_get_split_state, &model->get_split_state_ud)
@@ -1044,60 +1047,68 @@ static struct llama_model * llama_model_load_from_file_impl(
                     case GGML_BACKEND_DEVICE_TYPE_META:
                         GGML_ABORT("fatal error");
                 }
+                }
+            }
+
+            // add RPC servers at the front of the list to minimize network transfers
+            model->devices.insert(model->devices.begin(), rpc_servers.begin(), rpc_servers.end());
+
+            // add GPUs
+            model->devices.insert(model->devices.end(), gpus.begin(), gpus.end());
+
+            // add integrated GPUs only if no other devices were found
+            if (model->devices.empty()) {
+                model->devices.insert(model->devices.end(), igpus.begin(), igpus.end());
             }
         }
 
-        // add RPC servers at the front of the list to minimize network transfers
-        model->devices.insert(model->devices.begin(), rpc_servers.begin(), rpc_servers.end());
-
-        // add GPUs
-        model->devices.insert(model->devices.end(), gpus.begin(), gpus.end());
-
-        // add integrated GPUs only if no other devices were found
-        if (model->devices.empty()) {
-            model->devices.insert(model->devices.end(), igpus.begin(), igpus.end());
-        }
-    }
-
-    // if using single GPU mode, remove all except the main GPU
-    if (params.split_mode == LLAMA_SPLIT_MODE_NONE) {
-        if (params.main_gpu < 0) {
-            model->devices.clear();
-        } else {
-            if (params.main_gpu >= (int)model->devices.size()) {
-                LLAMA_LOG_ERROR("%s: invalid value for main_gpu: %d (available devices: %zu)\n", __func__, params.main_gpu, model->devices.size());
-                llama_model_free(model);
-                return nullptr;
+        // if using single GPU mode, remove all except the main GPU
+        if (params.split_mode == LLAMA_SPLIT_MODE_NONE) {
+            if (params.main_gpu < 0) {
+                model->devices.clear();
+            } else {
+                if (params.main_gpu >= (int)model->devices.size()) {
+                    LLAMA_LOG_ERROR("%s: invalid value for main_gpu: %d (available devices: %zu)\n", __func__, params.main_gpu, model->devices.size());
+                    return nullptr;
+                }
+                llama_device main_gpu = model->devices[params.main_gpu];
+                model->devices.clear();
+                model->devices.push_back(main_gpu);
             }
-            llama_device main_gpu = model->devices[params.main_gpu];
-            model->devices.clear();
-            model->devices.push_back(main_gpu);
-        }
-    }
-
-    for (const auto & dev : model->devices) {
-        ggml_backend_dev_props props;
-        ggml_backend_dev_get_props(dev.dev, &props);
-        LLAMA_LOG_INFO("%s: using device %s (%s) (%s) - %zu MiB free\n", __func__,
-                ggml_backend_dev_name(dev.dev), ggml_backend_dev_description(dev.dev),
-                props.device_id ? props.device_id : "unknown id",
-                props.memory_free/1024/1024);
-    }
-
-    const int status = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, *model, params);
-    GGML_ASSERT(status <= 0);
-    if (status < 0) {
-        if (status == -1) {
-            LLAMA_LOG_ERROR("%s: failed to load model\n", __func__);
-        } else if (status == -2) {
-            LLAMA_LOG_INFO("%s: cancelled model load\n", __func__);
         }
 
-        llama_model_free(model);
+        for (const auto & dev : model->devices) {
+            ggml_backend_dev_props props;
+            ggml_backend_dev_get_props(dev.dev, &props);
+            LLAMA_LOG_INFO("%s: using device %s (%s) (%s) - %zu MiB free\n", __func__,
+                    ggml_backend_dev_name(dev.dev), ggml_backend_dev_description(dev.dev),
+                    props.device_id ? props.device_id : "unknown id",
+                    props.memory_free/1024/1024);
+        }
+
+        const int status = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, *model, params);
+        GGML_ASSERT(status <= 0);
+        if (status < 0) {
+            if (status == -1) {
+                LLAMA_LOG_ERROR("%s: failed to load model\n", __func__);
+            } else if (status == -2) {
+                LLAMA_LOG_INFO("%s: cancelled model load\n", __func__);
+            }
+
+            return nullptr;
+        }
+
+        return model.release();
+    } catch (const LlamaException & e) {
+        LLAMA_LOG_ERROR("Llama exception: %s\n", e.what());
+        return nullptr;
+    } catch (const std::exception & e) {
+        LLAMA_LOG_ERROR("exception: %s\n", e.what());
+        return nullptr;
+    } catch (...) {
+        LLAMA_LOG_ERROR("unknown exception\n");
         return nullptr;
     }
-
-    return model;
 }
 
 struct llama_model * llama_model_init_from_user(
