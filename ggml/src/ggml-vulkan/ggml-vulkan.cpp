@@ -13677,13 +13677,21 @@ static size_t ggml_backend_vk_buffer_type_get_alloc_size(ggml_backend_buffer_typ
 }
 
 ggml_backend_buffer_type_t ggml_backend_vk_buffer_type(size_t dev_num) {
-    ggml_vk_instance_init();
+    try {
+        ggml_vk_instance_init();
 
-    VK_LOG_DEBUG("ggml_backend_vk_buffer_type(" << dev_num << ")");
+        VK_LOG_DEBUG("ggml_backend_vk_buffer_type(" << dev_num << ")");
 
-    vk_device dev = ggml_vk_get_device(dev_num);
+        vk_device dev = ggml_vk_get_device(dev_num);
 
-    return &dev->buffer_type;
+        return &dev->buffer_type;
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_buffer_type: " << e.what() << std::endl;
+        return nullptr;
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_buffer_type: unknown exception" << std::endl;
+        return nullptr;
+    }
 }
 
 // host buffer type
@@ -13755,11 +13763,19 @@ ggml_backend_buffer_type_t ggml_backend_vk_host_buffer_type() {
         /* .context  = */ nullptr,
     };
 
-    // Make sure device 0 is initialized
-    ggml_vk_instance_init();
-    ggml_vk_get_device(0);
+    try {
+        // Make sure device 0 is initialized
+        ggml_vk_instance_init();
+        ggml_vk_get_device(0);
 
-    return &ggml_backend_vk_buffer_type_host;
+        return &ggml_backend_vk_buffer_type_host;
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_host_buffer_type: " << e.what() << std::endl;
+        return nullptr;
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_host_buffer_type: unknown exception" << std::endl;
+        return nullptr;
+    }
 }
 
 
@@ -15110,23 +15126,31 @@ static ggml_guid_t ggml_backend_vk_guid() {
 }
 
 ggml_backend_t ggml_backend_vk_init(size_t dev_num) {
-    VK_LOG_DEBUG("ggml_backend_vk_init(" << dev_num << ")");
+    try {
+        VK_LOG_DEBUG("ggml_backend_vk_init(" << dev_num << ")");
 
-    ggml_backend_vk_context * ctx = new ggml_backend_vk_context;
-    ggml_vk_init(ctx, dev_num);
+        ggml_backend_vk_context * ctx = new ggml_backend_vk_context;
+        ggml_vk_init(ctx, dev_num);
 
-    ggml_backend_t vk_backend = new ggml_backend {
-        /* .guid    = */ ggml_backend_vk_guid(),
-        /* .iface   = */ ggml_backend_vk_interface,
-        /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_vk_reg(), dev_num),
-        /* .context = */ ctx,
-    };
+        ggml_backend_t vk_backend = new ggml_backend {
+            /* .guid    = */ ggml_backend_vk_guid(),
+            /* .iface   = */ ggml_backend_vk_interface,
+            /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_vk_reg(), dev_num),
+            /* .context = */ ctx,
+        };
 
-    if (!ctx->device->support_async) {
-        vk_backend->iface.get_tensor_async = nullptr;
+        if (!ctx->device->support_async) {
+            vk_backend->iface.get_tensor_async = nullptr;
+        }
+
+        return vk_backend;
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_init: " << e.what() << std::endl;
+        return nullptr;
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_init: unknown exception" << std::endl;
+        return nullptr;
     }
-
-    return vk_backend;
 }
 
 bool ggml_backend_is_vk(ggml_backend_t backend) {
@@ -15134,45 +15158,71 @@ bool ggml_backend_is_vk(ggml_backend_t backend) {
 }
 
 int ggml_backend_vk_get_device_count() {
-    return ggml_vk_get_device_count();
+    try {
+        return ggml_vk_get_device_count();
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_get_device_count: " << e.what() << std::endl;
+        return 0;
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_get_device_count: unknown exception" << std::endl;
+        return 0;
+    }
 }
 
 void ggml_backend_vk_get_device_description(int device, char * description, size_t description_size) {
-    GGML_ASSERT(device < (int) vk_instance.device_indices.size());
-    int dev_idx = vk_instance.device_indices[device];
-    ggml_vk_get_device_description(dev_idx, description, description_size);
+    try {
+        GGML_ASSERT(device < (int) vk_instance.device_indices.size());
+        int dev_idx = vk_instance.device_indices[device];
+        ggml_vk_get_device_description(dev_idx, description, description_size);
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_get_device_description: " << e.what() << std::endl;
+        snprintf(description, description_size, "unknown");
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_get_device_description: unknown exception" << std::endl;
+        snprintf(description, description_size, "unknown");
+    }
 }
 
 void ggml_backend_vk_get_device_memory(int device, size_t * free, size_t * total) {
-    GGML_ASSERT(device < (int) vk_instance.device_indices.size());
-    GGML_ASSERT(device < (int) vk_instance.device_supports_membudget.size());
+    try {
+        GGML_ASSERT(device < (int) vk_instance.device_indices.size());
+        GGML_ASSERT(device < (int) vk_instance.device_supports_membudget.size());
 
-    vk::PhysicalDevice vkdev = vk_instance.instance.enumeratePhysicalDevices()[vk_instance.device_indices[device]];
-    vk::PhysicalDeviceMemoryBudgetPropertiesEXT budgetprops;
-    vk::PhysicalDeviceMemoryProperties2 memprops = {};
-    const bool membudget_supported = vk_instance.device_supports_membudget[device];
-    const bool is_integrated_gpu = vkdev.getProperties().deviceType == vk::PhysicalDeviceType::eIntegratedGpu;
+        vk::PhysicalDevice vkdev = vk_instance.instance.enumeratePhysicalDevices()[vk_instance.device_indices[device]];
+        vk::PhysicalDeviceMemoryBudgetPropertiesEXT budgetprops;
+        vk::PhysicalDeviceMemoryProperties2 memprops = {};
+        const bool membudget_supported = vk_instance.device_supports_membudget[device];
+        const bool is_integrated_gpu = vkdev.getProperties().deviceType == vk::PhysicalDeviceType::eIntegratedGpu;
 
-    if (membudget_supported) {
-        memprops.pNext = &budgetprops;
-    }
-    vkdev.getMemoryProperties2(&memprops);
+        if (membudget_supported) {
+            memprops.pNext = &budgetprops;
+        }
+        vkdev.getMemoryProperties2(&memprops);
 
-    *total = 0;
-    *free = 0;
+        *total = 0;
+        *free = 0;
 
-    for (uint32_t i = 0; i < memprops.memoryProperties.memoryHeapCount; ++i) {
-        const vk::MemoryHeap & heap = memprops.memoryProperties.memoryHeaps[i];
+        for (uint32_t i = 0; i < memprops.memoryProperties.memoryHeapCount; ++i) {
+            const vk::MemoryHeap & heap = memprops.memoryProperties.memoryHeaps[i];
 
-        if (is_integrated_gpu || (heap.flags & vk::MemoryHeapFlagBits::eDeviceLocal)) {
-            *total += heap.size;
+            if (is_integrated_gpu || (heap.flags & vk::MemoryHeapFlagBits::eDeviceLocal)) {
+                *total += heap.size;
 
-            if (membudget_supported && i < budgetprops.heapUsage.size()) {
-                *free += budgetprops.heapBudget[i] - budgetprops.heapUsage[i];
-            } else {
-                *free += heap.size;
+                if (membudget_supported && i < budgetprops.heapUsage.size()) {
+                    *free += budgetprops.heapBudget[i] - budgetprops.heapUsage[i];
+                } else {
+                    *free += heap.size;
+                }
             }
         }
+    } catch (const std::exception & e) {
+        std::cerr << "ggml_backend_vk_get_device_memory: " << e.what() << std::endl;
+        *total = 0;
+        *free = 0;
+    } catch (...) {
+        std::cerr << "ggml_backend_vk_get_device_memory: unknown exception" << std::endl;
+        *total = 0;
+        *free = 0;
     }
 }
 
